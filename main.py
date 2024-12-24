@@ -1,51 +1,78 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Form, HTTPException
 import mysql.connector
 from pydantic import BaseModel
-from typing import Optional
 
-# Inisialisasi aplikasi FastAPI
+
+# Initialize the FastAPI app
 app = FastAPI()
 
-# Koneksi ke database MySQL
-def db_connection():
+
+# Database connection helper function
+def get_db_connection():
+    """Establish a connection to the MySQL database."""
     return mysql.connector.connect(
-        host="localhost",       # Ganti dengan host MySQL
-        user="root",            # Ganti dengan username MySQL Anda
-        password="",    # Ganti dengan password MySQL Anda
-        database="sensor_ldr"  # Nama database yang akan digunakan
+        host="localhost",       # Replace with your MySQL host
+        user="root",            # Replace with your MySQL username
+        password="",            # Replace with your MySQL password
+        database="sensor_ldr"   # Replace with the name of your MySQL database
     )
 
-# Model untuk menerima data LDR
+
+# Pydantic model for LDR data
 class LDRData(BaseModel):
     ldr_value: float
 
-# Endpoint untuk menerima data LDR dan menyimpannya ke MySQL
-@app.post("/insert_data")
-async def insert_data(ldr_value: float = Form(...)):
-    # Menyimpan data LDR ke database
-    conn = db_connection()
+
+# Function to insert LDR data into the database
+def insert_ldr_data_to_db(ldr_value: float):
+    """Insert the LDR data value into the database."""
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("INSERT INTO ldr_data (ldr_value) VALUES (%s)", (ldr_value,))
     conn.commit()
     cursor.close()
     conn.close()
-    
-    return {"message": "Data inserted successfully"}
 
-# Endpoint untuk menampilkan data LDR
-@app.get("/get_data")
-async def get_data():
-    # Mengambil data LDR dari database
-    conn = db_connection()
-    cursor = conn.cursor()
+
+# Endpoint to insert LDR data
+@app.post("/insert_data")
+async def insert_data(ldr_value: float = Form(...)):
+    """Insert LDR data into the database and return a success message."""
+    try:
+        insert_ldr_data_to_db(ldr_value)
+        return {"message": "Data inserted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error inserting data: {e}")
+
+
+# Function to retrieve all LDR data from the database
+def get_all_ldr_data():
+    """Fetch all LDR data from the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM ldr_data")
     result = cursor.fetchall()
     cursor.close()
     conn.close()
-    
-    return JSONResponse(content=result)
+    return result
 
-if __name__ == '__main__':
+
+# Endpoint to get all LDR data
+@app.get("/get_data")
+async def get_data():
+    """Retrieve LDR data from the database."""
+    try:
+        result = get_all_ldr_data()
+        if not result:
+            raise HTTPException(status_code=404, detail="No data found")
+        return {"result": result}
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"MySQL error: {err}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Main execution
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app)
